@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fishy Business</title>
+  <link rel="stylesheet" href="https://use.typekit.net/ndd3rku.css">
+  <style>
+
+  #bg-video {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: auto;
+  height: auto;
+  min-width: 100%;
+  min-height: 100%;
+  object-fit: cover;
+  z-index: -2;
+  pointer-events: none;
+  opacity: 0; /* we'll use ::before to tile it */
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: url(src/overlay.mp4);
+  background-repeat: repeat;
+  background-size: auto;
+  z-index: -1;
+}
+    
+    canvas {
+  display: block;
+  margin: 0 auto;
+  background: #000;
+  width: 68.4%;   /* CHANGE: Set width as a percentage of viewport width */
+  height: 97.5vh;  /* CHANGE: Set height as a percentage of viewport height */
+  max-width: 100vw;   /* Optional: Prevent overflow */
+  max-height: 100vh;  /* Optional: Prevent overflow */
+}
+
+
+    #ui-container {
+  position: absolute;
+  top: 0;
+  left: 0; /* Aligns the UI container to the left side */
+  width: 200px; /* Adjust this to control the width of the UI container */
+  height: 100%; /* Makes the UI container span the full height of the window */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  color: rgb(255, 255, 255);
+  font-family: Arial, sans-serif;
+  font-size: 20px;
+  padding: 10px;
+  box-sizing: border-box; /* Ensures padding is included in width/height calculation */
+  z-index: 999; /* Ensures the UI container is above other elements */
+  font-size: 32px;
+  font-family: "lores-12", sans-serif;
+  font-weight: 700;
+  font-style: normal;
+}
+
+#ui-container div {
+  margin: 10px 0;
+  text-align: center;
+}
+body{
+    background-image: url(src/ui-bg.png);
+}
+#title{
+  font-size: 65px;
+}
+
+  </style>
+</head>
+<body>
+<video id="bg-video" autoplay muted loop playsinline>
+  <source src="src/overlay.mp4" type="video/mp4" />
+</video>
+
+<div id="ui-container">
+  <div id="title">Fishy Business</div>
+  <div id="level-display">Level: 1</div>
+  <div id="timer-display">Time: 0s</div>
+  <div id="highscore-display">Highscore: 0</div>
+</div>
+  <script>
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    document.body.appendChild(canvas);
+
+    // canvas.width = 1569;
+    // canvas.height = 1020;
+
+    const tileSize = canvas.width/3.825;
+    const maxLevels = 5;
+
+    const mazes = [
+[ "####################", //Level 1
+  "#     #            #",
+  "# ### # ####### ## #", 
+  "#     #       #    #", 
+  "# # #####/### #### #", 
+  "# #     #///#      #", 
+  "# ##### ##### ######", 
+  "#     #       #    #", 
+  "##### ####### # ## #", 
+  "#   #         #    #", 
+  "# # #### ###### ####", 
+  "#                  #", 
+  "####################", ], 
+
+[ "####################",  //Level 2
+  "#                  #", 
+  "# ####### ######## #", 
+  "# #                #", 
+  "# # ####### ###### #", 
+  "#   #              #", 
+  "# # # ####### ######", 
+  "# # #              #", 
+  "# # ########### ## #", 
+  "#                  #", 
+  "### ## ####### #####", 
+  "#//    /#/////     #", 
+  "####################", ], 
+
+[ "####################", //Level 3
+  "#//////#           #", 
+  "#/#/#/## # # ##### #", 
+  "# # #    # # #   # #", 
+  "# # #### # # # # # #", 
+  "#      # # # # # # #", 
+  "# #### # # # # #   #", 
+  "# #### #   # # ### #", 
+  "#    # # # # #   # #", 
+  "# ## #   # # ### # #", 
+  "# ## ##### # ### # #", 
+  "#          #       #",
+  "####################", ],
+
+[ "####################", //Level 4
+  "#////////#/////////#",
+  "### # ## ##/### # ##",
+  "#   #    #///#     #",
+  "# ###### ##### #####",
+  "#                  #",
+  "#### ### ####### # #",
+  "#    //#         # #",
+  "# ####### ### #### #",
+  "#       # #        #",
+  "# # # ### # # ### ##",
+  "#   #     /////////#",
+  "####################", ],
+
+[ "####################", //Level 5
+  "#       #      #   #",
+  "# # ### # ###### # #",
+  "#     # #/    #   ##",
+  "# ### # #### ###  ##",
+  "# #   #    #       #",
+  "# # ###### ### ### #",
+  "# #      #     #   #",
+  "# ######   ### #  ##",
+  "#      # #   #     #",
+  "## ### # # # #### ##",
+  "#    //    #       #",
+  "####################", ],
+  []
+  ];
+
+    let maze = mazes[0];
+    let player = { x: 1, y: 1, width: tileSize, height: tileSize, speed: 2 };
+    let key = { x: 18, y: 1, width: 80, height: tileSize, collected: false };
+    let door = { x: 18, y: 11, open: false };
+    let enemies = [];
+    let enemySize = 80; // Default enemy size
+    let level = 1;
+    let gameOver = false;
+    let playerSteps = 0;
+    let wallMapping = []; // Stores the chosen image index for each wall tile
+    let highscore = 0;
+    let timer = 0;
+    let playerDirection = "left";
+    let showWinImage = false;
+
+    function setEnemySize(newSize) {
+      enemySize = newSize;
+      enemies.forEach(enemy => {
+      enemy.width = enemySize;
+      enemy.height = enemySize;
+      });
+    }
+
+    const images = {
+      player: new Image(),
+      playerFlipped: new Image(),
+      enemy: new Image(),
+      enemyFlipped: new Image(),
+      key: new Image(),
+      bg: new Image(),
+      walls: [new Image(), new Image(), new Image()],
+      doorClosed: new Image(),
+      doorOpen: new Image(),
+      youWin: new Image(),
+    };
+
+
+    // Load images
+    images.player.src = "src/player.png";
+    images.playerFlipped.src = "src/playerFlipped.png";
+    images.enemy.src = "src/enemy.png";
+    images.enemyFlipped.src = "src/enemyFlipped.png"
+    images.key.src = "src/key.png";
+    images.bg.src = "src/bg.png";
+    images.walls[0].src = "src/1.png";
+    images.walls[1].src = "src/2.png";
+    images.walls[2].src = "src/3.png";
+    images.doorClosed.src = "src/door1.png"; // Closed door image
+    images.doorOpen.src = "src/door2.png";   // Open door image
+    images.youWin.src = "src/you win.jpg";
+
+    const levelDisplay = document.getElementById('level-display');
+    const timerDisplay = document.getElementById('timer-display');
+    const highscoreDisplay = document.getElementById('highscore-display');
+
+    setInterval(() => {
+    if (!gameOver) {
+      timer++;
+      timerDisplay.textContent = `Time: ${timer}s`;
+    }
+    }, 1000);
+
+
+    // Ensure all images are loaded before starting the game
+    let imagesLoaded = 0;
+    const totalImages = Object.keys(images).length + images.walls.length - 1;
+
+    const onImageLoad = () => {
+      imagesLoaded++;
+      if (imagesLoaded === totalImages) {
+        resetGame();
+        gameLoop();
+      }
+    };
+
+    Object.values(images).forEach(img => {
+      if (Array.isArray(img)) {
+        img.forEach(wallImg => (wallImg.onload = onImageLoad));
+      } else {
+        img.onload = onImageLoad;
+      }
+    });
+
+    function createKey() {
+    let keyX, keyY;
+    do {
+        keyX = Math.floor(Math.random() * maze[0].length); // Generate random X-coordinate
+        keyY = Math.floor(Math.random() * maze.length);   // Generate random Y-coordinate
+    } while (
+        maze[keyY][keyX] === "#" || // Check if it's a wall
+        enemies.some(enemy => enemy.x === keyX && enemy.y === keyY) || // Check if it's an enemy location
+        (keyX === player.x && keyY === player.y) || // Check if it's the player's location
+        (keyX === door.x && keyY === door.y) // Check if it's the door's location
+    ) while (
+        maze[keyY][keyX] === "/" || // Check if it's a wall
+        enemies.some(enemy => enemy.x === keyX && enemy.y === keyY) || // Check if it's an enemy location
+        (keyX === player.x && keyY === player.y) || // Check if it's the player's location
+        (keyX === door.x && keyY === door.y) // Check if it's the door's location
+    );
+
+    // Assign new position to the key
+    key = { x: keyX, y: keyY, width: key.width, height: key.height, collected: false };
+}
+
+    function generateWallMapping() {
+      wallMapping = maze.map(row => row.split("").map(cell => {
+        if (cell === "#") {
+          return Math.floor(Math.random() * images.walls.length); // Choose a random wall image index
+        }
+        return null; // Non-wall cells
+      }));
+    }
+
+    function resizeCanvas() {
+      // Get computed CSS size in pixels
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+      // Optionally reset scaling/transform if you use ctx.scale elsewhere
+      // ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transforms before drawing
+    }
+    window.addEventListener("resize", resizeCanvas);
+    resizeCanvas();
+
+    window.addEventListener("resize", resizeCanvas);
+
+
+    function drawMaze() {
+    // Draw the background as a single image that scales with the canvas
+    ctx.drawImage(images.bg, 0, 0, canvas.width, canvas.height);
+
+    maze.forEach((row, rowIndex) => {
+        row.split("").forEach((cell, colIndex) => {
+            if (cell === "#") {
+                const wallImageIndex = wallMapping[rowIndex][colIndex];
+                const wallImage = images.walls[wallImageIndex];
+                ctx.drawImage(wallImage, colIndex * tileSize, rowIndex * tileSize, tileSize, tileSize);
+            }
+        });
+    });
+}
+
+    function updateUI() {
+    levelDisplay.textContent = `Level: ${level}`;
+    highscore = Math.max(highscore, level-1); // Update highscore
+    highscoreDisplay.textContent = `Highscore: ${highscore}`;
+  }
+    
+
+    function drawPlayer() {
+      if(playerDirection === "right"){
+        ctx.drawImage(images.playerFlipped, player.x * tileSize + (tileSize - player.width) / 2, player.y * tileSize + (tileSize - player.height) / 2, player.width, player.height);
+      } else {
+        ctx.drawImage(images.player, player.x * tileSize + (tileSize - player.width) / 2, player.y * tileSize + (tileSize - player.height) / 2, player.width, player.height);
+      }
+    }
+
+    function drawKey() {
+      if (!key.collected) {
+        ctx.drawImage(images.key, key.x * tileSize + (tileSize - key.width) / 2, key.y * tileSize + (tileSize - key.height) / 2, key.width, key.height);
+      }
+    }
+
+    function drawDoor() {
+  const doorImage = door.open ? images.doorOpen : images.doorClosed;
+  ctx.drawImage(
+    doorImage,
+    door.x * tileSize + (tileSize - player.width) / 2,
+    door.y * tileSize + (tileSize - player.height) / 2,
+    tileSize,
+    tileSize
+  );
+}
+
+    function drawEnemies() {
+    enemies.forEach(enemy => {
+      if(enemy.direction === "left"){
+      ctx.drawImage(images.enemy, enemy.x * tileSize + (tileSize - enemy.width) / 2, enemy.y * tileSize + (tileSize - enemy.height) / 2, enemy.width, enemy.height);
+    } else {
+      ctx.drawImage(images.enemyFlipped, enemy.x * tileSize + (tileSize - enemy.width) / 2, enemy.y * tileSize + (tileSize - enemy.height) / 2, enemy.width, enemy.height);
+    }
+    });
+    }
+
+        function checkCollision(x, y) {
+      // Ensure the player doesn't move into walls or out of the maze
+      return maze[y]?.[x] === "#";
+    }
+
+    function checkEnemyCollision() {
+      return enemies.some(enemy => enemy.x === player.x && enemy.y === player.y);
+    }
+
+     function checkKeyCollision() {
+      return player.x === key.x && player.y === key.y;
+    }
+
+    function checkDoorCollision() {
+      return player.x === door.x && player.y === door.y;
+    }
+
+    function update() {
+      if (gameOver) return;
+
+      if (checkEnemyCollision()) {
+        gameOver = true;
+        alert("Game Over! Press OK to restart.");
+        level = 1;
+        resetGame();
+      }
+
+      if (checkKeyCollision()) {
+        key.collected = true;
+        door.open = true;
+      }
+
+      if (checkDoorCollision() && door.open) {
+        if (level < maxLevels) {
+          level++;
+          alert(`Level ${level}!`);
+          resetGame();
+        } else {
+          // Show win image
+          showWinImage = true;
+          // Draw the win image over the canvas
+          ctx.drawImage(images.youWin, 0, 0, canvas.width, canvas.height);
+
+          // Listen for any key to reset the game
+          function handleWinKey(e) {
+            showWinImage = false;
+            level = 1;
+            resetGame();
+            window.removeEventListener('keydown', handleWinKey);
+          }
+          window.addEventListener('keydown', handleWinKey);
+        }
+      }
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      drawMaze();
+      drawPlayer();
+      drawKey();
+      drawDoor();
+      drawEnemies();
+      if (showWinImage) {
+        ctx.drawImage(images.youWin, 0, 0, canvas.width, canvas.height);
+      }
+
+    }
+
+    function resetGame() {
+    maze = mazes[0 + (level - 1)];
+    player = { x: 1, y: 1, width: player.width, height: player.height, speed: 2 };
+    door = { x: 18, y: 11, open: false };
+    playerSteps = 0;
+    timer = 0; // Reset timer
+    generateWallMapping();
+    createEnemies();
+    createKey();
+    updateUI();
+  }
+
+    function gameLoop() {
+      update();
+      draw();
+      requestAnimationFrame(gameLoop);
+    }
+
+    function createEnemies() {
+  enemies = [];
+  for (let i = 0; i < level + 0; i++) {
+    let enemyX, enemyY;
+    do {
+      enemyX = Math.floor(Math.random() * maze[0].length);
+      enemyY = Math.floor(Math.random() * maze.length);
+    } while (maze[enemyY][enemyX] === "#" || (enemyX === player.x && enemyY === player.y));
+    enemies.push({ x: enemyX, y: enemyY, width: enemySize, height: enemySize, direction: "left"});
+    }
+  }
+
+
+
+    window.addEventListener("keydown", (e) => {
+      let newX = player.x;
+      let newY = player.y;
+
+      if (e.key === "ArrowUp") newY--;
+      if (e.key === "ArrowDown") newY++;
+      if (e.key === "ArrowLeft") newX--, playerDirection = "left";
+      if (e.key === "ArrowRight") newX++, playerDirection = "right";
+
+      if (!checkCollision(newX, newY)) {
+        player.x = newX;
+        player.y = newY;
+        playerSteps++;
+
+        if (playerSteps > 5) {
+          moveEnemies();
+        }
+      }
+    });
+
+    function moveEnemies() {
+    enemies.forEach(enemy => {
+        const dx = player.x - enemy.x;
+        const dy = player.y - enemy.y;
+
+        if (Math.abs(dx) > Math.abs(dy)) {
+            if (!checkCollision(enemy.x + Math.sign(dx), enemy.y)) {
+                // Update X position
+                enemy.x += Math.sign(dx);
+
+                // Set enemyDirection to "left" or "right" for this specific enemy
+                enemy.direction = Math.sign(dx) === -1 ? "left" : "right";
+            } else if (!checkCollision(enemy.x, enemy.y + Math.sign(dy))) {
+                // Update Y position
+                enemy.y += Math.sign(dy);
+            }
+        } else {
+            if (!checkCollision(enemy.x, enemy.y + Math.sign(dy))) {
+                // Update Y position
+                enemy.y += Math.sign(dy);
+            } else if (!checkCollision(enemy.x + Math.sign(dx), enemy.y)) {
+                // Update X position
+                enemy.x += Math.sign(dx);
+
+                // Set enemyDirection to "left" or "right" for this specific enemy
+                enemy.direction = Math.sign(dx) === -1 ? "left" : "right";
+            }
+        }
+    });
+}
+
+    
+
+    resizeCanvas();
+  </script>
+</body>
+</html>
